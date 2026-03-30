@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="utf-8" />
+        <title>When Observable Test</title>
+    </head>
+    <body>
+        <when-observable-element id="test">
+            <template shadowrootmode="open">
+                <!--fe-b$$start$$0$$WhenObs$$fe-b--><button class="continue-btn">Continue</button><!--fe-b$$end$$0$$WhenObs$$fe-b-->
+                <!--fe-b$$start$$1$$WhenObs$$fe-b--><!--fe-b$$end$$1$$WhenObs$$fe-b-->
+                <button class="cancel-btn">Cancel</button>
+            </template>
+        </when-observable-element>
+        <f-template name="when-observable-element">
+            <template>
+                <f-when value="{{workplaceJoined}}">
+                    <button class="continue-btn">Continue</button>
+                </f-when>
+                <f-when value="{{!workplaceJoined}}">
+                    <div class="error-msg">Workplace join required</div>
+                    <button class="retry-btn">Retry</button>
+                </f-when>
+                <button class="cancel-btn">Cancel</button>
+            </template>
+        </f-template>
+        <script type="module" src="./main.ts"></script>
+    </body>
+</html>

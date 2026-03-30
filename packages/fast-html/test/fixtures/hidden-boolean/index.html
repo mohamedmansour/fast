@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="utf-8" />
+        <title>Hidden Boolean Test</title>
+    </head>
+    <body>
+        <hidden-boolean-element id="test">
+            <template shadowrootmode="open">
+                <div class="content" data-fe-b-0>Visible content</div>
+                <div class="fallback" hidden data-fe-b-1>Fallback content</div>
+            </template>
+        </hidden-boolean-element>
+        <f-template name="hidden-boolean-element">
+            <template>
+                <div class="content" ?hidden="{{!showContent}}">Visible content</div>
+                <div class="fallback" ?hidden="{{showContent}}">Fallback content</div>
+            </template>
+        </f-template>
+        <script type="module" src="./main.ts"></script>
+    </body>
+</html>

@@ -24,6 +24,16 @@ export default defineConfig({
                 repeat: join(__dirname, "fixtures", "repeat/index.html"),
                 slotted: join(__dirname, "fixtures", "slotted/index.html"),
                 when: join(__dirname, "fixtures", "when/index.html"),
+                "hidden-boolean": join(
+                    __dirname,
+                    "fixtures",
+                    "hidden-boolean/index.html"
+                ),
+                "when-observable": join(
+                    __dirname,
+                    "fixtures",
+                    "when-observable/index.html"
+                ),
             },
         },
     },
