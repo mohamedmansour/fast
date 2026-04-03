@@ -124,6 +124,7 @@ export { HTMLView, HydrationBindingError } from "./templating/view.js";
 export type {
     ElementView,
     HydratableView,
+    HydrationBindingDiagnostics,
     SyntheticView,
     View,
 } from "./templating/view.js";

@@ -118,7 +118,7 @@ function removeNodeSequence(firstNode: Node, lastNode: Node): void {
             throw new Error(
                 `Unmatched first/last child inside "${
                     (lastNode.getRootNode() as ShadowRoot).host.nodeName
-                }".`
+                }".`,
             );
         }
         parent.removeChild(current);
@@ -263,7 +263,7 @@ export class HTMLView<TSource = any, TParent = any>
     public constructor(
         private fragment: DocumentFragment,
         private factories: ReadonlyArray<CompiledViewBehaviorFactory>,
-        public readonly targets: ViewBehaviorTargets
+        public readonly targets: ViewBehaviorTargets,
     ) {
         super();
         this.firstChild = fragment.firstChild!;
@@ -443,8 +443,110 @@ export const HydrationStage = {
     hydrated: "hydrated",
 } as const;
 
+/**
+ * Structured diagnostics attached to a
+ * {@link HydrationBindingError}.
+ * @public
+ */
+export interface HydrationBindingDiagnostics {
+    /** Index of the factory that failed (0-based). */
+    factoryIndex: number;
+    /** Total number of factories in the view. */
+    totalFactories: number;
+    /** String form of the binding expression, if available. */
+    bindingExpression: string | undefined;
+    /** The available target ID sharing the longest common prefix. */
+    nearestAvailablePath: string | undefined;
+    /** Depth difference between expected and nearest path. */
+    depthMismatch: number | undefined;
+    /** Heuristic guess at the root cause. */
+    likelyCause: string | undefined;
+}
+
+function findNearestPath(expected: string, availableIds: string[]): string | undefined {
+    if (availableIds.length === 0) return undefined;
+    const expectedParts = expected.split(".");
+    let best: string | undefined;
+    let bestLen = -1;
+    for (const id of availableIds) {
+        const parts = id.split(".");
+        let common = 0;
+        const limit = Math.min(expectedParts.length, parts.length);
+        for (let i = 0; i < limit; i++) {
+            if (expectedParts[i] === parts[i]) {
+                common++;
+            } else {
+                break;
+            }
+        }
+        if (common > bestLen) {
+            bestLen = common;
+            best = id;
+        }
+    }
+    return best;
+}
+
+function inferLikelyCause(
+    expected: string,
+    nearest: string | undefined,
+    depthMismatch: number | undefined,
+): string | undefined {
+    if (nearest === undefined) return "no target IDs available";
+    if (depthMismatch !== undefined && Math.abs(depthMismatch) >= 2) {
+        return "directive element mismatch";
+    }
+    const expectedParts = expected.split(".");
+    const nearestParts = nearest.split(".");
+    if (expectedParts.length === nearestParts.length) {
+        const lastE = expectedParts[expectedParts.length - 1];
+        const lastN = nearestParts[nearestParts.length - 1];
+        if (lastE !== lastN) {
+            return "missing marker";
+        }
+    }
+    if (depthMismatch !== undefined && Math.abs(depthMismatch) === 1) {
+        return "duplicate node";
+    }
+    return undefined;
+}
+
+function buildBindingDiagnostics(
+    factoryIndex: number,
+    totalFactories: number,
+    factory: ViewBehaviorFactory,
+    availableIds: string[],
+): HydrationBindingDiagnostics {
+    const factoryInfo = factory as any;
+    const bindingExpression: string | undefined =
+        factoryInfo.dataBinding?.evaluate?.toString() ??
+        factoryInfo.sourceAspect ??
+        undefined;
+
+    const expected = factory.targetNodeId ?? "";
+    const nearest = findNearestPath(expected, availableIds);
+    let depthMismatch: number | undefined;
+    if (nearest !== undefined) {
+        depthMismatch = expected.split(".").length - nearest.split(".").length;
+    }
+    const likelyCause = inferLikelyCause(expected, nearest, depthMismatch);
+    return {
+        factoryIndex,
+        totalFactories,
+        bindingExpression,
+        nearestAvailablePath: nearest,
+        depthMismatch,
+        likelyCause,
+    };
+}
+
 /** @public */
 export class HydrationBindingError extends Error {
+    /**
+     * Machine-readable diagnostics for the binding failure.
+     */
+    public readonly structuredDiagnostics?: HydrationBindingDiagnostics;
+
     constructor(
         /**
          * The error message
@@ -464,9 +566,12 @@ export class HydrationBindingError extends Error {
          * String representation of the HTML in the template that
          * threw the binding error.
          */
-        public readonly templateString: string
+        public readonly templateString: string,
+
+        diagnostics?: HydrationBindingDiagnostics,
     ) {
         super(message);
+        this.structuredDiagnostics = diagnostics;
     }
 }
 
@@ -500,7 +605,7 @@ export class HydrationView<TSource = any, TParent = any>
         public readonly firstChild: Node,
         public readonly lastChild: Node,
         private sourceTemplate: ViewTemplate,
-        private hostBindingTarget?: Element
+        private hostBindingTarget?: Element,
     ) {
         super();
         this.factories = sourceTemplate.compile().factories;
@@ -561,7 +666,7 @@ export class HydrationView<TSource = any, TParent = any>
                 throw new Error(
                     `Unmatched first/last child inside "${
                         (end.getRootNode() as ShadowRoot).host.nodeName
-                    }".`
+                    }".`,
                 );
             }
             fragment.appendChild(current);
@@ -589,7 +694,7 @@ export class HydrationView<TSource = any, TParent = any>
                 const { targets, boundaries } = buildViewBindingTargets(
                     this.firstChild,
                     this.lastChild,
-                    this.factories
+                    this.factories,
                 );
                 this._targets = targets;
                 this._bindingViewBoundaries = boundaries;
@@ -629,6 +734,8 @@ export class HydrationView<TSource = any, TParent = any>
                         .host;
                     const hostName = hostElement?.nodeName || "unknown";
                     const factoryInfo = factory as any;
+                    const availableIds = Object.keys(this.targets);
+                    const diag = buildBindingDiagnostics(i, ii, factory, availableIds);
 
                     // Build detailed error message
                     const details: string[] = [
@@ -636,9 +743,14 @@ export class HydrationView<TSource = any, TParent = any>
                         `\nMismatch Details:`,
                         `  - Expected target node ID: "${factory.targetNodeId}"`,
                         `  - Available target IDs: [${
-                            Object.keys(this.targets).join(", ") || "none"
+                            availableIds.join(", ") || "none"
                         }]`,
+                        `  - Factory: ${i + 1} of ${ii}`,
                     ];
+
+                    if (diag.bindingExpression) {
+                        details.push(`  - Binding expression: ${diag.bindingExpression}`);
+                    }
 
                     if (factory.targetTagName) {
                         details.push(`  - Expected tag name: "${factory.targetTagName}"`);
@@ -652,6 +764,20 @@ export class HydrationView<TSource = any, TParent = any>
                         details.push(`  - Aspect type: ${factoryInfo.aspectType}`);
                     }
 
+                    if (diag.nearestAvailablePath) {
+                        details.push(
+                            `  - Nearest available path: "${diag.nearestAvailablePath}"`,
+                        );
+                    }
+
+                    if (diag.depthMismatch !== undefined) {
+                        details.push(`  - Depth mismatch: ${diag.depthMismatch}`);
+                    }
+
+                    if (diag.likelyCause) {
+                        details.push(`  - Likely cause: ${diag.likelyCause}`);
+                    }
+
                     details.push(
                         `\nThis usually means:`,
                         `  1. The server-rendered HTML doesn't match the client template`,
@@ -659,7 +785,7 @@ export class HydrationView<TSource = any, TParent = any>
                         `  3. The DOM structure was modified before hydration`,
                         `\nTemplate: ${templateString.slice(0, 200)}${
                             templateString.length > 200 ? "..." : ""
-                        }`
+                        }`,
                     );
 
                     throw new HydrationBindingError(
@@ -667,9 +793,10 @@ export class HydrationView<TSource = any, TParent = any>
                         factory,
                         createRangeForNodes(
                             this.firstChild,
-                            this.lastChild
+                            this.lastChild,
                         ).cloneContents(),
-                        templateString
+                        templateString,
+                        diag,
                     );
                 }
             }

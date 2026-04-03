@@ -614,15 +614,26 @@ export interface HydratableView<TSource = any, TParent = any> extends ElementVie
     readonly hydrationStage: keyof typeof HydrationStage;
 }
 
+// @public
+export interface HydrationBindingDiagnostics {
+    bindingExpression: string | undefined;
+    depthMismatch: number | undefined;
+    factoryIndex: number;
+    likelyCause: string | undefined;
+    nearestAvailablePath: string | undefined;
+    totalFactories: number;
+}
+
 // @public (undocumented)
 export class HydrationBindingError extends Error {
     constructor(
     message: string | undefined,
     factory: ViewBehaviorFactory,
     fragment: DocumentFragment,
-    templateString: string);
+    templateString: string, diagnostics?: HydrationBindingDiagnostics);
     readonly factory: ViewBehaviorFactory;
     readonly fragment: DocumentFragment;
+    readonly structuredDiagnostics?: HydrationBindingDiagnostics;
     readonly templateString: string;
 }
 

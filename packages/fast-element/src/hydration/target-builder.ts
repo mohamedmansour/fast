@@ -12,6 +12,25 @@ export class HydrationTargetElementError extends Error {
      */
     public templateString?: string;
 
+    /**
+     * Ancestor element chain from the target node up to the
+     * shadow root host (or document), useful for locating the
+     * mismatch in the DOM tree.
+     */
+    public readonly parentChain: string[];
+
+    /**
+     * The content of the nearest hydration marker comment
+     * found on the target node, if any.
+     */
+    public readonly markerContent: string | undefined;
+
+    /**
+     * Expected binding information derived from the factory
+     * list (source aspect and target tag names).
+     */
+    public readonly expectedBindings: string[];
+
     constructor(
         /**
          * The error message
@@ -24,10 +43,67 @@ export class HydrationTargetElementError extends Error {
         /**
          * The node to target factory.
          */
-        public readonly node: Element
+        public readonly node: Element,
     ) {
-        super(message);
+        const chain = buildParentChain(node);
+        const marker = findMarkerContent(node);
+        const bindings = factories.map(f => {
+            const info = f as any;
+            const aspect = info.sourceAspect ? `[${info.sourceAspect}]` : "";
+            const tag = f.targetTagName ?? "?";
+            return `${tag}${aspect}#${f.targetNodeId}`;
+        });
+
+        const enriched = [
+            message ?? "",
+            `\n  Parent chain: ${chain.join(" > ")}`,
+            `  Expected bindings: [${bindings.join(", ")}]`,
+        ];
+        if (marker !== undefined) {
+            enriched.push(`  Marker content: "${marker}"`);
+        }
+
+        super(enriched.join("\n"));
+
+        this.parentChain = chain;
+        this.markerContent = marker;
+        this.expectedBindings = bindings;
     }
+}
+
+function buildParentChain(node: Element): string[] {
+    const chain: string[] = [];
+    let current: Element | null = node;
+    // Walk at most 10 levels to avoid runaway loops.
+    while (current && chain.length < 10) {
+        chain.push(current.nodeName.toLowerCase());
+        if (current.parentElement) {
+            current = current.parentElement;
+        } else {
+            const root = current.getRootNode();
+            if (root instanceof DocumentFragment && "host" in root) {
+                chain.push(
+                    `#shadow-root(${(root as ShadowRoot).host.nodeName.toLowerCase()})`,
+                );
+            }
+            break;
+        }
+    }
+    return chain;
+}
+
+function findMarkerContent(node: Element): string | undefined {
+    for (let i = 0; i < node.childNodes.length; i++) {
+        const child = node.childNodes[i];
+        if (child.nodeType === Node.COMMENT_NODE) {
+            return (child as Comment).data;
+        }
+    }
+    // Also check previous siblings for marker comments.
+    if (node.previousSibling && node.previousSibling.nodeType === Node.COMMENT_NODE) {
+        return (node.previousSibling as Comment).data;
+    }
+    return undefined;
 }
 
 /**
@@ -69,7 +145,7 @@ export function createRangeForNodes(first: Node, last: Node): Range {
     // on usageNotes:  https://developer.mozilla.org/en-US/docs/Web/API/Range/setEnd#usage_notes
     range.setEnd(
         last,
-        isComment(last) || isText(last) ? last.data.length : last.childNodes.length
+        isComment(last) || isText(last) ? last.data.length : last.childNodes.length,
     );
     return range;
 }
@@ -88,7 +164,7 @@ function isShadowRoot(node: Node): node is ShadowRoot {
 export function buildViewBindingTargets(
     firstNode: Node,
     lastNode: Node,
-    factories: CompiledViewBehaviorFactory[]
+    factories: CompiledViewBehaviorFactory[],
 ): { targets: ViewBehaviorTargets; boundaries: ViewBehaviorBoundaries } {
     const range = createRangeForNodes(firstNode, lastNode);
     const treeRoot = range.commonAncestorContainer;
@@ -102,7 +178,7 @@ export function buildViewBindingTargets(
                     ? NodeFilter.FILTER_ACCEPT
                     : NodeFilter.FILTER_REJECT;
             },
-        }
+        },
     );
     const targets: ViewBehaviorTargets = {};
     const boundaries: ViewBehaviorBoundaries = {};
@@ -123,7 +199,7 @@ export function buildViewBindingTargets(
                     factories,
                     targets,
                     boundaries,
-                    hydrationIndexOffset
+                    hydrationIndexOffset,
                 );
                 break;
             }
@@ -140,7 +216,7 @@ function targetElement(
     node: Element,
     factories: CompiledViewBehaviorFactory[],
     targets: ViewBehaviorTargets,
-    hydrationIndexOffset: number
+    hydrationIndexOffset: number,
 ) {
     // Check for attributes and map any factories.
     const attrFactoryIds =
@@ -159,7 +235,7 @@ function targetElement(
                         (node.getRootNode() as ShadowRoot).host.nodeName
                     }. This likely indicates a template mismatch between SSR rendering and hydration.`,
                     factories,
-                    node
+                    node,
                 );
             }
             targetFactory(factory, node, targets);
@@ -175,7 +251,7 @@ function targetComment(
     factories: CompiledViewBehaviorFactory[],
     targets: ViewBehaviorTargets,
     boundaries: ViewBehaviorBoundaries,
-    hydrationIndexOffset: number
+    hydrationIndexOffset: number,
 ) {
     if (HydrationMarkup.isElementBoundaryStartMarker(node)) {
         skipToElementBoundaryEndMarker(node, walker);
@@ -216,7 +292,7 @@ function targetComment(
             throw new Error(
                 `Error hydrating Comment node inside "${
                     isShadowRoot(root) ? root.host.nodeName : root.nodeName
-                }".`
+                }".`,
             );
         }
 
@@ -242,7 +318,7 @@ function targetComment(
             // text content binding will be written to this text node instead of comment
             const dummyTextNode = current.parentNode!.insertBefore(
                 document.createTextNode(""),
-                current
+                current,
             );
             targetFactory(factory, dummyTextNode, targets);
         }
@@ -287,7 +363,7 @@ function getHydrationIndexOffset(factories: CompiledViewBehaviorFactory[]): numb
 export function targetFactory(
     factory: ViewBehaviorFactory,
     node: Node,
-    targets: ViewBehaviorTargets
+    targets: ViewBehaviorTargets,
 ): void {
     if (factory.targetNodeId === undefined) {
         // Dev error, this shouldn't ever be thrown
