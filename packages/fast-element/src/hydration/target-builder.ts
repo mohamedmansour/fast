@@ -296,3 +296,156 @@ export function targetFactory(
 
     targets[factory.targetNodeId] = node;
 }
+
+
+/**
+ * A structured representation of a single client-side binding expectation,
+ * derived from the factory list. This is the client-side counterpart to the
+ * server's `extractMarkerTree` and can be compared against the server marker
+ * tree to detect mismatches.
+ * @public
+ */
+export interface ClientBindingNode {
+    /** Zero-based index of the factory in the compiled factory array. */
+    factoryIndex: number;
+    /** Structural DOM node ID the factory targets. */
+    targetNodeId: string;
+    /** The {@link DOMAspect} type (0 = none, 1 = attribute, etc.). */
+    aspectType: number;
+    /** Human-readable binding expression, if available. */
+    bindingExpression?: string;
+    /** Tag name of the target element, if known. */
+    tagName?: string;
+}
+
+/**
+ * Maps a compiled factory list into a structured array of
+ * {@link ClientBindingNode} entries. This allows tooling to compare
+ * the client-side expected binding tree against the server-emitted
+ * hydration markers.
+ *
+ * @param factories - The compiled factory array from the template.
+ * @returns An array of {@link ClientBindingNode} objects, one per factory.
+ * @public
+ */
+export function extractClientBindingTree(
+    factories: ReadonlyArray<{ targetNodeId: string; aspectType?: number }>,
+): ClientBindingNode[] {
+    return factories.map((factory, index) => {
+        const info = factory as Record<string, unknown>;
+        const node: ClientBindingNode = {
+            factoryIndex: index,
+            targetNodeId: factory.targetNodeId,
+            aspectType: factory.aspectType ?? 0,
+        };
+
+        // Pull the binding expression string when available.
+        if (typeof info.dataBinding === "object" && info.dataBinding !== null) {
+            const binding = info.dataBinding as Record<string, unknown>;
+            if (typeof binding.toString === "function") {
+                node.bindingExpression = String(binding);
+            }
+        } else if (typeof info.sourceAspect === "string") {
+            node.bindingExpression = info.sourceAspect;
+        }
+
+        // Capture the target tag name if the factory carries one.
+        if (typeof info.targetTagName === "string") {
+            node.tagName = info.targetTagName;
+        }
+
+        return node;
+    });
+}
+
+/**
+ * Analyzes the depth difference between expected and available paths to help
+ * diagnose hydration targeting issues. Depth is measured by counting dot
+ * separators in each path string.
+ *
+ * @param expectedPath - The path that was expected to be found
+ * @param availablePaths - Array of paths that were actually available
+ * @returns Analysis object with depth information and likely cause
+ * @public
+ */
+export function depthAnalysis(expectedPath: string, availablePaths: string[]): {
+    commonPrefix: string;
+    expectedDepth: number;
+    nearestAvailableDepth: number;
+    depthDifference: number;
+    likelyCause: string;
+} {
+    const countDots = (s: string): number => {
+        let n = 0;
+        for (let i = 0; i < s.length; i++) {
+            if (s[i] === ".") n++;
+        }
+        return n;
+    };
+
+    const expectedDepth = countDots(expectedPath);
+
+    if (availablePaths.length === 0) {
+        return {
+            commonPrefix: "",
+            expectedDepth,
+            nearestAvailableDepth: 0,
+            depthDifference: expectedDepth,
+            likelyCause: "directive_element_mismatch",
+        };
+    }
+
+    // Find the longest common character prefix among all paths (including expected).
+    const allPaths = [expectedPath, ...availablePaths];
+    let commonPrefix = allPaths[0];
+    for (let i = 1; i < allPaths.length; i++) {
+        let j = 0;
+        while (j < commonPrefix.length && j < allPaths[i].length && commonPrefix[j] === allPaths[i][j]) {
+            j++;
+        }
+        commonPrefix = commonPrefix.substring(0, j);
+    }
+
+    // Trim to the last complete segment (end at a dot boundary).
+    const lastDot = commonPrefix.lastIndexOf(".");
+    if (lastDot !== -1) {
+        commonPrefix = commonPrefix.substring(0, lastDot + 1);
+    } else if (commonPrefix !== expectedPath && commonPrefix !== availablePaths[0]) {
+        // Partial segment match — not a complete prefix.
+        commonPrefix = "";
+    }
+
+    // Pick the available path whose depth is closest to the expected depth.
+    const availableDepths = availablePaths.map(countDots);
+    let nearestAvailableDepth = availableDepths[0];
+    for (let i = 1; i < availableDepths.length; i++) {
+        if (
+            Math.abs(availableDepths[i] - expectedDepth) <
+            Math.abs(nearestAvailableDepth - expectedDepth)
+        ) {
+            nearestAvailableDepth = availableDepths[i];
+        }
+    }
+
+    const depthDifference = Math.abs(expectedDepth - nearestAvailableDepth);
+
+    // Heuristic cause classification.
+    let likelyCause: string;
+    if (depthDifference >= 2) {
+        likelyCause = "directive_element_mismatch";
+    } else if (depthDifference === 0) {
+        likelyCause = "missing_marker";
+    } else {
+        // depthDifference === 1
+        likelyCause = "duplicate_node";
+    }
+
+    return {
+        commonPrefix,
+        expectedDepth,
+        nearestAvailableDepth,
+        depthDifference,
+        likelyCause,
+    };
+}
+
