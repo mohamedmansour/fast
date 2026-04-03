@@ -547,6 +547,14 @@ export class HydrationBindingError extends Error {
      */
     public readonly structuredDiagnostics?: HydrationBindingDiagnostics;
 
+    /**
+     * Alias of `structuredDiagnostics` exposed as a JSON-serializable
+     * diagnostics property for tooling that expects a `diagnostics` key.
+     */
+    public get diagnostics(): HydrationBindingDiagnostics | undefined {
+        return this.structuredDiagnostics;
+    }
+
     constructor(
         /**
          * The error message
@@ -572,6 +580,32 @@ export class HydrationBindingError extends Error {
     ) {
         super(message);
         this.structuredDiagnostics = diagnostics;
+    }
+
+    /**
+     * Returns a clean JSON-serializable representation of the error
+     * for diagnostic purposes.
+     * @returns A plain object containing the error details
+     */
+    toJSON(): {
+        message: string;
+        factory: any;
+        templateString: string;
+        diagnostics?: HydrationBindingDiagnostics;
+        structuredDiagnostics?: HydrationBindingDiagnostics;
+        stack?: string;
+    } {
+        return {
+            message: this.message,
+            factory: {
+                targetNodeId: this.factory.targetNodeId,
+                ...((this.factory as any).sourceAspect && { sourceAspect: (this.factory as any).sourceAspect })
+            },
+            templateString: this.templateString,
+            diagnostics: this.structuredDiagnostics,
+            structuredDiagnostics: this.structuredDiagnostics,
+            stack: this.stack
+        };
     }
 }
 

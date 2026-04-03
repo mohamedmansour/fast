@@ -372,3 +372,94 @@ export function targetFactory(
 
     targets[factory.targetNodeId] = node;
 }
+
+/**
+ * Analyzes the depth difference between expected and available paths to help
+ * diagnose hydration targeting issues. Depth is measured by counting dot
+ * separators in each path string.
+ *
+ * @param expectedPath - The path that was expected to be found
+ * @param availablePaths - Array of paths that were actually available
+ * @returns Analysis object with depth information and likely cause
+ * @public
+ */
+export function depthAnalysis(expectedPath: string, availablePaths: string[]): {
+    commonPrefix: string;
+    expectedDepth: number;
+    nearestAvailableDepth: number;
+    depthDifference: number;
+    likelyCause: string;
+} {
+    const countDots = (s: string): number => {
+        let n = 0;
+        for (let i = 0; i < s.length; i++) {
+            if (s[i] === ".") n++;
+        }
+        return n;
+    };
+
+    const expectedDepth = countDots(expectedPath);
+
+    if (availablePaths.length === 0) {
+        return {
+            commonPrefix: "",
+            expectedDepth,
+            nearestAvailableDepth: 0,
+            depthDifference: expectedDepth,
+            likelyCause: "directive_element_mismatch",
+        };
+    }
+
+    // Find the longest common character prefix among all paths (including expected).
+    const allPaths = [expectedPath, ...availablePaths];
+    let commonPrefix = allPaths[0];
+    for (let i = 1; i < allPaths.length; i++) {
+        let j = 0;
+        while (j < commonPrefix.length && j < allPaths[i].length && commonPrefix[j] === allPaths[i][j]) {
+            j++;
+        }
+        commonPrefix = commonPrefix.substring(0, j);
+    }
+
+    // Trim to the last complete segment (end at a dot boundary).
+    const lastDot = commonPrefix.lastIndexOf(".");
+    if (lastDot !== -1) {
+        commonPrefix = commonPrefix.substring(0, lastDot + 1);
+    } else if (commonPrefix !== expectedPath && commonPrefix !== availablePaths[0]) {
+        // Partial segment match — not a complete prefix.
+        commonPrefix = "";
+    }
+
+    // Pick the available path whose depth is closest to the expected depth.
+    const availableDepths = availablePaths.map(countDots);
+    let nearestAvailableDepth = availableDepths[0];
+    for (let i = 1; i < availableDepths.length; i++) {
+        if (
+            Math.abs(availableDepths[i] - expectedDepth) <
+            Math.abs(nearestAvailableDepth - expectedDepth)
+        ) {
+            nearestAvailableDepth = availableDepths[i];
+        }
+    }
+
+    const depthDifference = Math.abs(expectedDepth - nearestAvailableDepth);
+
+    // Heuristic cause classification.
+    let likelyCause: string;
+    if (depthDifference >= 2) {
+        likelyCause = "directive_element_mismatch";
+    } else if (depthDifference === 0) {
+        likelyCause = "missing_marker";
+    } else {
+        // depthDifference === 1
+        likelyCause = "duplicate_node";
+    }
+
+    return {
+        commonPrefix,
+        expectedDepth,
+        nearestAvailableDepth,
+        depthDifference,
+        likelyCause,
+    };
+}
