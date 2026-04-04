@@ -95,6 +95,11 @@ export { slotted, SlottedDirective } from "../src/templating/slotted.js";
 export { isString } from "../src/interfaces.js";
 export { FAST, emptyArray } from "../src/platform.js";
 export { Metadata } from "../src/metadata.js";
+export {
+    extractClientBindingTree,
+    depthAnalysis,
+    type ClientBindingNode,
+} from "../src/hydration/target-builder.js";
 export function removeWhitespace(str: string): string {
     return str
         .trim()
