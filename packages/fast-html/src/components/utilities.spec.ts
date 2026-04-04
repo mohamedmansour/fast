@@ -245,6 +245,68 @@ test.describe("utilities", async () => {
                 "attribute",
             );
         });
+        test("repeat directive with client-side binding in value attribute", async () => {
+            const innerHTML = '<f-repeat value="{item in items}"><div>{{item.label}}</div></f-repeat>';
+            const templateResult = getNextBehavior(innerHTML);
+
+            expect(templateResult?.type).toEqual("templateDirective");
+            expect(
+                (templateResult as TemplateDirectiveBehaviorConfig)?.name,
+            ).toEqual("repeat");
+            expect(
+                (templateResult as TemplateDirectiveBehaviorConfig)?.openingTagStartIndex,
+            ).toEqual(0);
+        });
+        test("repeat directive is found before {} in its value attribute", async () => {
+            // The { in value="{item in items}" must not cause the parser
+            // to skip past the <f-repeat> tag.
+            const innerHTML = '<f-repeat value="{item in items}"><div @click="{onClick(e)}">{{item.label}}</div></f-repeat>';
+            const templateResult = getNextBehavior(innerHTML);
+
+            expect(templateResult?.type).toEqual("templateDirective");
+            expect(
+                (templateResult as TemplateDirectiveBehaviorConfig)?.name,
+            ).toEqual("repeat");
+        });
+        test("repeat directive preceded by content", async () => {
+            const innerHTML = '<h1>Title</h1><f-repeat value="{row in rows}"><span>{{row.name}}</span></f-repeat>';
+            const templateResult = getNextBehavior(innerHTML);
+
+            expect(templateResult?.type).toEqual("templateDirective");
+            expect(
+                (templateResult as TemplateDirectiveBehaviorConfig)?.name,
+            ).toEqual("repeat");
+            expect(
+                (templateResult as TemplateDirectiveBehaviorConfig)?.openingTagStartIndex,
+            ).toEqual(14);
+        });
+        test("repeat directive with mixed bindings inside", async () => {
+            const innerHTML =
+                '<f-repeat value="{item in items}">' +
+                '<div data-id="{{item.id}}">' +
+                '<span>{{item.title}}</span>' +
+                '<button @click="{onDelete(e)}">Delete</button>' +
+                '</div></f-repeat>';
+            const templateResult = getNextBehavior(innerHTML);
+
+            expect(templateResult?.type).toEqual("templateDirective");
+            expect(
+                (templateResult as TemplateDirectiveBehaviorConfig)?.name,
+            ).toEqual("repeat");
+            expect(
+                (templateResult as TemplateDirectiveBehaviorConfig)?.value,
+            ).toEqual("item in items");
+        });
+        test("data binding is returned when it appears before a repeat directive", async () => {
+            const innerHTML = '{{header}}<f-repeat value="{item in items}"><div>{{item.label}}</div></f-repeat>';
+            const templateResult = getNextBehavior(innerHTML);
+
+            // The {{header}} content binding comes first.
+            expect(templateResult?.type).toEqual("dataBinding");
+            expect((templateResult as ContentDataBindingBehaviorConfig)?.subtype).toEqual(
+                "content",
+            );
+        });
     });
 
     test.describe("attributes", async () => {

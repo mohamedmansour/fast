@@ -426,6 +426,17 @@ export function getNextBehavior(
             return null;
         }
 
+        // Check directives BEFORE skipping non-legitimate {} bindings.
+        // The value="{x in y}" attribute on <f-repeat> looks like a
+        // client-side binding, so the skip logic below would advance
+        // the offset past the directive tag if we checked it first.
+        if (
+            directiveBindingOpen !== -1 &&
+            (dataBindingOpen === -1 || directiveBindingOpen < dataBindingOpen)
+        ) {
+            return offsetDirective(getNextDirectiveBehavior(currentSlice), offset);
+        }
+
         if (
             dataBindingOpen !== -1 &&
             nextDataBindingBehavior.bindingType === "client" &&
