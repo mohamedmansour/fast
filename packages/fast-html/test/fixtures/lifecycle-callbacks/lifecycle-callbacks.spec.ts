@@ -122,6 +122,23 @@ test.describe("Lifecycle Callbacks", async () => {
         expect(hydrationCompleteIndex).toBeGreaterThan(lastElementDidHydrateIndex);
     });
 
+    test("hydrationComplete receives all hydrated elements", async ({ page }) => {
+        await page.goto("/fixtures/lifecycle-callbacks/");
+
+        await page.waitForFunction(() => (window as any).getHydrationCompleteStatus());
+
+        const elements = await page.evaluate(
+            () => (window as any).hydrationCompleteElements
+        );
+
+        expect(elements).toBeDefined();
+        expect(Array.isArray(elements)).toBe(true);
+        expect(elements.length).toBeGreaterThan(0);
+        expect(elements).toContain("simple-element");
+        expect(elements).toContain("complex-element");
+        expect(elements).toContain("nested-element");
+    });
+
     test("should handle complex element with observer map", async ({ page }) => {
         await page.goto("/fixtures/lifecycle-callbacks/");
 

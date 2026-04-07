@@ -27,9 +27,12 @@ TemplateElement.config({
     elementDidHydrate(source: HTMLElement): void {
         lifecycleEvents.push({ callback: "elementDidHydrate", name: source.localName });
     },
-    hydrationComplete(): void {
+    hydrationComplete(elements: HTMLElement[]): void {
         lifecycleEvents.push({ callback: "hydrationComplete" });
         hydrationCompleteEmitted = true;
+        (window as any).hydrationCompleteElements = elements?.map(
+            (el: HTMLElement) => el.localName
+        );
     },
 });
 

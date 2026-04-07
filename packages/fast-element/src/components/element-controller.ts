@@ -850,7 +850,7 @@ export interface HydrationControllerCallbacks<
     /**
      * Called after all elements have completed hydration
      */
-    hydrationComplete?(): void;
+    hydrationComplete?(elements: TElement[]): void;
 }
 
 /**
@@ -899,6 +899,12 @@ export class HydratableElementController<
      * Whether the hydrationStarted callback has already been invoked.
      */
     private static hydrationStarted: boolean = false;
+
+    /**
+     * Elements that have completed hydration, accumulated for the
+     * hydrationComplete callback.
+     */
+    private static allHydratedElements: HTMLElement[] = [];
 
     /**
      * An idle callback ID used to track hydration completion
@@ -960,10 +966,14 @@ export class HydratableElementController<
         // If there are no more hydrating instances, invoke the hydrationComplete callback
         if (HydratableElementController.hydratingInstances?.size === 0) {
             try {
-                HydratableElementController.lifecycleCallbacks.hydrationComplete?.();
+                HydratableElementController.lifecycleCallbacks.hydrationComplete?.(
+                    HydratableElementController.allHydratedElements
+                );
             } catch {
                 // A lifecycle callback must never prevent post-hydration cleanup.
             }
+
+            HydratableElementController.allHydratedElements = [];
 
             // Reset to the default strategy after hydration is complete
             ElementController.setStrategy(ElementController);
@@ -1103,6 +1113,7 @@ export class HydratableElementController<
 
         if (instances) {
             instances.delete(this.source);
+            HydratableElementController.allHydratedElements.push(this.source);
 
             if (!instances.size) {
                 HydratableElementController.hydratingInstances.delete(name);
